@@ -1,0 +1,189 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      #################################################
+      # Checkout code
+      #################################################
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      #################################################
+      # Setup Node.js for frontend build (Node 20 LTS)
+      #################################################
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      #################################################
+      # Build frontend on GitHub Actions
+      #################################################
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          NODE_ENV: production
+        run: |
+          npm run build
+
+      #################################################
+      # Configure SSH
+      #################################################
+      - name: Configure SSH
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.SERVER_IP }}" >> ~/.ssh/known_hosts
+
+      #################################################
+      # Upload frontend build to server
+      #################################################
+      - name: Upload frontend build
+        run: |
+          rsync -avz \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            frontend/.next/ \
+            "ec2-user@${{ secrets.SERVER_IP }}:/tmp/sams-frontend-next/"
+
+      #################################################
+      # Deploy to server
+      #################################################
+      - name: Deploy to server
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+        run: |
+          set -e
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "ec2-user@${SERVER_IP}" << 'ENDSSH'
+
+          set -e
+
+          PROJECT_DIR="/home/ec2-user/SAMS"
+
+          echo "=========================================="
+          echo "Starting SAMS deployment"
+          echo "=========================================="
+
+          cd "${PROJECT_DIR}"
+
+          echo "==> Pulling latest code from main..."
+          git fetch origin main
+          git checkout main
+          # Discard any local changes to log files or hashes before pulling
+          git checkout -- backend/logs/ 2>/dev/null || true
+          git checkout -- frontend/logs/ 2>/dev/null || true
+          git checkout -- backend/.npm-ci-lockhash 2>/dev/null || true
+          git checkout -- frontend/.npm-ci-lockhash 2>/dev/null || true
+          git pull origin main
+
+          #################################################
+          # BACKEND PART
+          #################################################
+          echo "==> Checking backend dependencies..."
+          cd "${PROJECT_DIR}/backend"
+
+          LOCK_HASH_FILE="${PROJECT_DIR}/backend/.npm-ci-lockhash"
+          CURRENT_HASH="$(sha256sum package-lock.json package.json 2>/dev/null | sha256sum | awk '{print $1}')"
+          PREV_HASH="$(cat "${LOCK_HASH_FILE}" 2>/dev/null || true)"
+
+          if [ ! -d node_modules ] || [ "${CURRENT_HASH}" != "${PREV_HASH}" ]; then
+            echo "==> Installing backend dependencies (lockfile changed or node_modules missing)..."
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev
+            else
+              npm install --omit=dev
+            fi
+            echo "${CURRENT_HASH}" > "${LOCK_HASH_FILE}"
+          else
+            echo "==> Backend dependencies unchanged, skipping npm ci"
+          fi
+
+          #################################################
+          # FRONTEND PART
+          #################################################
+          echo "==> Deploying frontend build artifacts..."
+          mkdir -p "${PROJECT_DIR}/frontend/.next"
+
+          if [ -d /tmp/sams-frontend-next ]; then
+            rsync -av --delete \
+              /tmp/sams-frontend-next/ \
+              "${PROJECT_DIR}/frontend/.next/"
+            rm -rf /tmp/sams-frontend-next
+          fi
+
+          echo "==> Checking frontend dependencies..."
+          cd "${PROJECT_DIR}/frontend"
+
+          FRONTEND_LOCK_HASH_FILE="${PROJECT_DIR}/frontend/.npm-ci-lockhash"
+          FRONTEND_CURRENT_HASH="$(sha256sum package-lock.json package.json 2>/dev/null | sha256sum | awk '{print $1}')"
+          FRONTEND_PREV_HASH="$(cat "${FRONTEND_LOCK_HASH_FILE}" 2>/dev/null || true)"
+
+          if [ ! -d node_modules ] || [ "${FRONTEND_CURRENT_HASH}" != "${FRONTEND_PREV_HASH}" ]; then
+            echo "==> Installing frontend dependencies (lockfile changed or node_modules missing)..."
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev
+            else
+              npm install --omit=dev
+            fi
+            echo "${FRONTEND_CURRENT_HASH}" > "${FRONTEND_LOCK_HASH_FILE}"
+          else
+            echo "==> Frontend dependencies unchanged, skipping npm ci"
+          fi
+
+          #################################################
+          # PM2 RELOAD
+          #################################################
+          echo "==> Reloading PM2 processes..."
+
+          cd "${PROJECT_DIR}/backend"
+          mkdir -p logs
+          pm2 startOrReload ecosystem.config.cjs --update-env
+
+          cd "${PROJECT_DIR}/frontend"
+          mkdir -p logs
+          pm2 startOrReload ecosystem.config.cjs --update-env
+
+          echo "==> Saving PM2 process list..."
+          pm2 save
+
+          #################################################
+          # Cleanup
+          #################################################
+          rm -rf /tmp/sams-frontend-next
+
+          echo "=========================================="
+          echo "SAMS deployment completed successfully"
+          echo "=========================================="
+
+          ENDSSH
+
+      #################################################
+      # Cleanup SSH key
+      #################################################
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

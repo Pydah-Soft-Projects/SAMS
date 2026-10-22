@@ -45,6 +45,7 @@ sams-agent/installer/*.zip
 uploads/
 temp/
 *.log
+.npm-ci-lockhash
 
 # ─── IDE ──────────────────────────────────────────────────────────────────────
 .vscode/
