@@ -6,6 +6,7 @@ import { api } from '@/lib/api/client';
 import useRequireWrite from '@/hooks/useRequireWrite';
 import GateAccessPicker from '@/components/GateAccessPicker';
 import DepartmentPicker from '@/components/DepartmentPicker';
+import HrmsEmployeePicker from '@/components/HrmsEmployeePicker';
 import {
   filterDepartmentsByDivisions,
   filterGatesByDivisions,
@@ -19,6 +20,8 @@ export default function CreateSystemUserPage() {
   const [divisions, setDivisions] = useState([]);
   const [gates, setGates] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [hrmsEmployeeCreationEnabled, setHrmsEmployeeCreationEnabled] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -39,13 +42,15 @@ export default function CreateSystemUserPage() {
       api.divisions.list({ isActive: 'true' }),
       api.gates.list({ isActive: 'true' }),
       api.departments.list(),
+      api.gate.settings(),
     ])
-      .then(([roleList, divisionList, gateList, departmentList]) => {
+      .then(([roleList, divisionList, gateList, departmentList, gateSettings]) => {
         const activeRoles = roleList.filter((r) => r.isActive);
         setRoles(activeRoles);
         setDivisions(divisionList);
         setGates(gateList);
         setDepartments(departmentList);
+        setHrmsEmployeeCreationEnabled(gateSettings.hrmsEmployeeCreationEnabled ?? true);
         if (activeRoles.length > 0) setSystemRoleId(activeRoles[0]._id);
       })
       .catch((e) => setError(e.message));
@@ -84,8 +89,10 @@ export default function CreateSystemUserPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!displayName.trim()) return setError('Display name is required');
-    if (!username.trim()) return setError('Username is required');
-    if (!password || password.length < 6) return setError('Password must be at least 6 characters');
+    if (!selectedEmployee && !username.trim()) return setError('Username is required');
+    if (!selectedEmployee && (!password || password.length < 6)) {
+      return setError('Password must be at least 6 characters');
+    }
     if (!systemRoleId) return setError('System role is required');
 
     setLoading(true);
@@ -96,8 +103,8 @@ export default function CreateSystemUserPage() {
       const user = await api.systemUsers.create({
         displayName: displayName.trim(),
         email: email.trim(),
-        username: username.trim(),
-        password,
+        hrmsEmployeeId: selectedEmployee?._id,
+        ...(selectedEmployee ? {} : { username: username.trim(), password }),
         systemRoleId,
         divisionIds,
         gateIds,
@@ -138,6 +145,22 @@ export default function CreateSystemUserPage() {
         <div className="su-create-grid" style={{ marginTop: '1rem' }}>
           <section className="su-panel">
             <h4 className="su-panel__title">Account</h4>
+            {hrmsEmployeeCreationEnabled && <HrmsEmployeePicker
+              selectedEmployee={selectedEmployee}
+              onSelect={(employee) => {
+                setSelectedEmployee(employee);
+                setDisplayName(employee.displayName);
+                setEmail(employee.email || '');
+                setUsername(employee.employeeId || '');
+              }}
+              onClear={() => {
+                setSelectedEmployee(null);
+                setDisplayName('');
+                setEmail('');
+                setUsername('');
+                setPassword('');
+              }}
+            />}
             <div className="form-group">
               <label htmlFor="create-displayname">Display Name <span style={{ color: 'var(--danger)' }}>*</span></label>
               <input
@@ -145,6 +168,7 @@ export default function CreateSystemUserPage() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="e.g. John Smith"
+                readOnly={Boolean(selectedEmployee)}
               />
             </div>
             <div className="form-group">
@@ -155,6 +179,7 @@ export default function CreateSystemUserPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Optional email"
+                readOnly={Boolean(selectedEmployee)}
               />
             </div>
             <div className="form-group">
@@ -165,19 +190,24 @@ export default function CreateSystemUserPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Login username"
                 autoComplete="off"
+                readOnly={Boolean(selectedEmployee)}
               />
             </div>
-            <div className="form-group">
-              <label htmlFor="create-password">Password <span style={{ color: 'var(--danger)' }}>*</span></label>
-              <input
-                id="create-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
-                autoComplete="new-password"
-              />
-            </div>
+            {selectedEmployee ? (
+              <p className="field-hint">The employee will sign in with their existing HRMS password. Password changes must be made in HRMS.</p>
+            ) : (
+              <div className="form-group">
+                <label htmlFor="create-password">Password <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <input
+                  id="create-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  autoComplete="new-password"
+                />
+              </div>
+            )}
             <div className="form-group">
               <label htmlFor="create-role">System Role <span style={{ color: 'var(--danger)' }}>*</span></label>
               <select id="create-role" value={systemRoleId} onChange={(e) => setSystemRoleId(e.target.value)}>

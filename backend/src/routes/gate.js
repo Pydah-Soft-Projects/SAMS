@@ -2012,8 +2012,9 @@ router.get(
     }
     const eyeBlinkVerificationEnabled = settings.gateSettings?.eyeBlinkVerificationEnabled ?? true;
     const labourPayCategoryGateEntryOptional = settings.gateSettings?.labourPayCategoryGateEntryOptional ?? false;
+    const hrmsEmployeeCreationEnabled = settings.gateSettings?.hrmsEmployeeCreationEnabled ?? true;
     const optionalGatePayCategories = settings.gateSettings?.optionalGatePayCategories || ['contract', 'contractor', 'contractors', 'contracters', 'contracter'];
-    res.json({ eyeBlinkVerificationEnabled, labourPayCategoryGateEntryOptional, optionalGatePayCategories });
+    res.json({ eyeBlinkVerificationEnabled, labourPayCategoryGateEntryOptional, hrmsEmployeeCreationEnabled, optionalGatePayCategories });
   })
 );
 
@@ -2029,6 +2030,7 @@ router.get(
       settings.gateSettings = {
         eyeBlinkVerificationEnabled: true,
         labourPayCategoryGateEntryOptional: false,
+        hrmsEmployeeCreationEnabled: true,
         optionalGatePayCategories: ['contract', 'contractor', 'contractors', 'contracters', 'contracter'],
       };
       await settings.save();
@@ -2041,7 +2043,7 @@ router.get(
 router.put(
   '/settings',
   asyncHandler(async (req, res) => {
-    const { eyeBlinkVerificationEnabled, labourPayCategoryGateEntryOptional, optionalGatePayCategories } = req.body;
+    const { eyeBlinkVerificationEnabled, labourPayCategoryGateEntryOptional, hrmsEmployeeCreationEnabled, optionalGatePayCategories } = req.body;
     let settings = await SystemSetting.findOne({ singleton: 'singleton' });
     if (!settings) settings = new SystemSetting({ singleton: 'singleton' });
 
@@ -2049,6 +2051,9 @@ router.put(
       ...(settings.gateSettings || {}),
       eyeBlinkVerificationEnabled: eyeBlinkVerificationEnabled !== undefined ? Boolean(eyeBlinkVerificationEnabled) : (settings.gateSettings?.eyeBlinkVerificationEnabled ?? true),
       labourPayCategoryGateEntryOptional: labourPayCategoryGateEntryOptional !== undefined ? Boolean(labourPayCategoryGateEntryOptional) : (settings.gateSettings?.labourPayCategoryGateEntryOptional ?? false),
+      hrmsEmployeeCreationEnabled: typeof hrmsEmployeeCreationEnabled === 'boolean'
+        ? hrmsEmployeeCreationEnabled
+        : (settings.gateSettings?.hrmsEmployeeCreationEnabled ?? true),
       optionalGatePayCategories: Array.isArray(optionalGatePayCategories)
         ? optionalGatePayCategories.map(s => String(s).trim().toLowerCase()).filter(Boolean)
         : (settings.gateSettings?.optionalGatePayCategories || ['contract', 'contractor', 'contractors', 'contracters', 'contracter']),

@@ -9,6 +9,7 @@ export default function SystemSettingsPage() {
   const [settings, setSettings] = useState({
     eyeBlinkVerificationEnabled: true,
     labourPayCategoryGateEntryOptional: false,
+    hrmsEmployeeCreationEnabled: true,
     optionalGatePayCategories: ['contract', 'contractor', 'contractors', 'contracters', 'contracter'],
   });
   const [loading, setLoading] = useState(true);
@@ -24,6 +25,7 @@ export default function SystemSettingsPage() {
           setSettings({
             eyeBlinkVerificationEnabled: data.eyeBlinkVerificationEnabled ?? true,
             labourPayCategoryGateEntryOptional: data.labourPayCategoryGateEntryOptional ?? false,
+            hrmsEmployeeCreationEnabled: data.hrmsEmployeeCreationEnabled ?? true,
             optionalGatePayCategories: data.optionalGatePayCategories || ['contract', 'contractor', 'contractors', 'contracters', 'contracter'],
           });
         }
@@ -50,6 +52,13 @@ export default function SystemSettingsPage() {
     }));
   };
 
+  const handleToggleHrmsEmployeeCreation = () => {
+    setSettings(prev => ({
+      ...prev,
+      hrmsEmployeeCreationEnabled: !prev.hrmsEmployeeCreationEnabled,
+    }));
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
@@ -59,6 +68,7 @@ export default function SystemSettingsPage() {
       setSettings({
         eyeBlinkVerificationEnabled: updated.eyeBlinkVerificationEnabled ?? true,
         labourPayCategoryGateEntryOptional: updated.labourPayCategoryGateEntryOptional ?? false,
+        hrmsEmployeeCreationEnabled: updated.hrmsEmployeeCreationEnabled ?? true,
         optionalGatePayCategories: updated.optionalGatePayCategories || ['contract', 'contractor', 'contractors', 'contracters', 'contracter'],
       });
       setSuccess(true);
@@ -207,6 +217,47 @@ export default function SystemSettingsPage() {
                     position: 'absolute',
                     top: '3px',
                     left: settings.labourPayCategoryGateEntryOptional ? '29px' : '3px',
+                    transition: 'left 0.2s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                  }} />
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '2rem', paddingTop: '1.75rem', borderTop: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
+                  <span style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-primary)' }}>
+                    Add System Users from HRMS
+                  </span>
+                  <span className="text-muted" style={{ fontSize: '0.875rem' }}>
+                    When enabled, system users can be created using active employees from HRMS. Disabling this hides the HRMS employee picker and blocks HRMS-based user creation.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleHrmsEmployeeCreation}
+                  style={{
+                    width: '54px',
+                    height: '28px',
+                    borderRadius: '9999px',
+                    backgroundColor: settings.hrmsEmployeeCreationEnabled ? 'var(--primary)' : 'var(--border-color)',
+                    border: 'none',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s',
+                    flexShrink: 0,
+                    padding: 0
+                  }}
+                  aria-label="Add system users from HRMS"
+                  aria-pressed={settings.hrmsEmployeeCreationEnabled}
+                >
+                  <div style={{
+                    width: '22px',
+                    height: '22px',
+                    borderRadius: '50%',
+                    backgroundColor: '#fff',
+                    position: 'absolute',
+                    top: '3px',
+                    left: settings.hrmsEmployeeCreationEnabled ? '29px' : '3px',
                     transition: 'left 0.2s',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
                   }} />

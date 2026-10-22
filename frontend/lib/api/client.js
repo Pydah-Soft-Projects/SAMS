@@ -307,6 +307,7 @@ export const api = {
   systemUsers: {
     list: () => request('/system-users'),
     get: (id) => request(`/system-users/${id}`),
+    hrmsEmployees: (params = {}) => request(`/system-users/hrms-employees${toQuery(params)}`),
     create: (data) => request('/system-users', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => request(`/system-users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id) => request(`/system-users/${id}`, { method: 'DELETE' }),

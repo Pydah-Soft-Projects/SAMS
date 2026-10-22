@@ -10,6 +10,7 @@ import SystemUserDetailsModal from '@/components/SystemUserDetailsModal';
 import GateAccessPicker, { gateModeBadgeLabel } from '@/components/GateAccessPicker';
 import ScopeOverflowCell from '@/components/ScopeOverflowCell';
 import DepartmentPicker, { departmentDisplayLabel } from '@/components/DepartmentPicker';
+import HrmsEmployeePicker from '@/components/HrmsEmployeePicker';
 import {
   filterDepartmentsByDivisions,
   filterGatesByDivisions,
@@ -30,6 +31,8 @@ function NewUserModal({ onClose, onComplete }) {
   const [divisions, setDivisions] = useState([]);
   const [gates, setGates] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [hrmsEmployeeCreationEnabled, setHrmsEmployeeCreationEnabled] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -49,13 +52,15 @@ function NewUserModal({ onClose, onComplete }) {
       api.divisions.list({ isActive: 'true' }),
       api.gates.list({ isActive: 'true' }),
       api.departments.list(),
+      api.gate.settings(),
     ])
-      .then(([roleList, divisionList, gateList, departmentList]) => {
+      .then(([roleList, divisionList, gateList, departmentList, gateSettings]) => {
         const activeRoles = roleList.filter((r) => r.isActive);
         setRoles(activeRoles);
         setDivisions(divisionList);
         setGates(gateList);
         setDepartments(departmentList);
+        setHrmsEmployeeCreationEnabled(gateSettings.hrmsEmployeeCreationEnabled ?? true);
         if (activeRoles.length > 0) setSystemRoleId(activeRoles[0]._id);
       })
       .catch((e) => setError(e.message));
@@ -94,8 +99,10 @@ function NewUserModal({ onClose, onComplete }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!displayName.trim()) return setError('Display name is required');
-    if (!username.trim()) return setError('Username is required');
-    if (!password || password.length < 6) return setError('Password must be at least 6 characters');
+    if (!selectedEmployee && !username.trim()) return setError('Username is required');
+    if (!selectedEmployee && (!password || password.length < 6)) {
+      return setError('Password must be at least 6 characters');
+    }
     if (!systemRoleId) return setError('System role is required');
 
     setLoading(true);
@@ -105,8 +112,8 @@ function NewUserModal({ onClose, onComplete }) {
       const user = await api.systemUsers.create({
         displayName: displayName.trim(),
         email: email.trim(),
-        username: username.trim(),
-        password,
+        hrmsEmployeeId: selectedEmployee?._id,
+        ...(selectedEmployee ? {} : { username: username.trim(), password }),
         systemRoleId,
         divisionIds,
         gateIds,
@@ -158,23 +165,43 @@ function NewUserModal({ onClose, onComplete }) {
           <div className="reg-details-modal__body">
             <div className="su-account-panel">
               <p className="su-create-col__title">Account</p>
+              {hrmsEmployeeCreationEnabled && <HrmsEmployeePicker
+                selectedEmployee={selectedEmployee}
+                onSelect={(employee) => {
+                  setSelectedEmployee(employee);
+                  setDisplayName(employee.displayName);
+                  setEmail(employee.email || '');
+                  setUsername(employee.employeeId || '');
+                }}
+                onClear={() => {
+                  setSelectedEmployee(null);
+                  setDisplayName('');
+                  setEmail('');
+                  setUsername('');
+                  setPassword('');
+                }}
+              />}
               <div className="su-account-grid">
                 <div className="form-group">
                   <label htmlFor="user-displayname">Display Name <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input id="user-displayname" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="e.g. John Smith" autoFocus />
+                  <input id="user-displayname" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="e.g. John Smith" autoFocus readOnly={Boolean(selectedEmployee)} />
                 </div>
                 <div className="form-group">
                   <label htmlFor="user-email">Email</label>
-                  <input id="user-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Optional email" />
+                  <input id="user-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Optional email" readOnly={Boolean(selectedEmployee)} />
                 </div>
                 <div className="form-group">
                   <label htmlFor="user-username">Username <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input id="user-username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Login username" autoComplete="off" />
+                  <input id="user-username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Login username" autoComplete="off" readOnly={Boolean(selectedEmployee)} />
                 </div>
-                <div className="form-group">
-                  <label htmlFor="user-password">Password <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input id="user-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete="new-password" />
-                </div>
+                {selectedEmployee ? (
+                  <p className="field-hint">The employee will sign in with their existing HRMS password. Password changes must be made in HRMS.</p>
+                ) : (
+                  <div className="form-group">
+                    <label htmlFor="user-password">Password <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <input id="user-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete="new-password" />
+                  </div>
+                )}
                 <div className="form-group">
                   <label htmlFor="user-role">System Role <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <select id="user-role" value={systemRoleId} onChange={(e) => setSystemRoleId(e.target.value)}>

@@ -11,6 +11,7 @@ import {
 } from '../middleware/auth.js';
 import { getUserAccessScope } from '../services/accessScopeService.js';
 import { getLoginFlow } from '../services/loginFlowService.js';
+import { verifyHrmsEmployeePassword } from '../services/hrmsEmployeeService.js';
 import { userHasPermission } from '../middleware/auth.js';
 import {
   hasPrimaryAdminDevice,
@@ -34,6 +35,7 @@ function serializeUser(user) {
     username: user.username,
     displayName: user.displayName,
     email: user.email,
+    hrmsEmployeeId: user.hrmsEmployeeId || null,
     isSuperAdmin: user.isSuperAdmin,
     isActive: user.isActive,
     divisionIds: user.divisionIds,
@@ -210,7 +212,7 @@ router.post(
 
     // Fetch user with passwordHash — run concurrently with nothing else yet
     const user = await SystemUser.findOne({ username: username.toLowerCase().trim() })
-      .select('+passwordHash displayName email isActive isSuperAdmin divisionIds gateIds gateAccessModes departmentIds lastLoginAt createdAt updatedAt')
+      .select('+passwordHash hrmsEmployeeId displayName email isActive isSuperAdmin divisionIds gateIds gateAccessModes departmentIds lastLoginAt createdAt updatedAt')
       .populate('systemRoleId', 'name slug permissions isActive')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType divisionId')
@@ -222,7 +224,9 @@ router.post(
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
+    const valid = user.hrmsEmployeeId
+      ? await verifyHrmsEmployeePassword(user.hrmsEmployeeId, password)
+      : await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
@@ -291,7 +295,9 @@ router.post(
       return res.status(401).json({ error: 'Invalid password' });
     }
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
+    const valid = user.hrmsEmployeeId
+      ? await verifyHrmsEmployeePassword(user.hrmsEmployeeId, password)
+      : await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       return res.status(401).json({ error: 'Invalid password' });
     }
@@ -336,6 +342,9 @@ router.put(
     const user = await SystemUser.findById(req.user._id).select('+passwordHash');
     if (!user || !user.isActive) {
       return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (user.hrmsEmployeeId) {
+      return res.status(400).json({ error: 'Manage this account password in HRMS' });
     }
 
     user.passwordHash = await bcrypt.hash(password, 12);

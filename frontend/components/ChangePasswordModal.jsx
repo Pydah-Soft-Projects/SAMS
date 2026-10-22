@@ -79,9 +79,16 @@ export default function ChangePasswordModal({ user, onClose }) {
       <div className="shift-picker-modal change-password-modal" onClick={(e) => e.stopPropagation()}>
         <h3 className="shift-picker-modal__title">Change Password</h3>
         <p className="shift-picker-modal__desc">
-          Update the login password for this account.
+          {user?.hrmsEmployeeId
+            ? 'This account uses HRMS credentials. Change the password in HRMS to keep it synchronized.'
+            : 'Update the login password for this account.'}
         </p>
 
+        {user?.hrmsEmployeeId ? (
+          <div className="shift-picker-modal__actions">
+            <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label htmlFor="change-password-username">Username</label>
@@ -156,6 +163,7 @@ export default function ChangePasswordModal({ user, onClose }) {
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

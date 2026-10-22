@@ -6,6 +6,7 @@ const systemUserSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true, select: false },
     displayName: { type: String, required: true, trim: true },
     email: { type: String, default: '', trim: true, lowercase: true },
+    hrmsEmployeeId: { type: String, default: undefined },
     systemRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'SystemRole', default: null },
     isSuperAdmin: { type: Boolean, default: false },
     divisionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Division' }],
@@ -39,5 +40,9 @@ const systemUserSchema = new mongoose.Schema(
 );
 
 systemUserSchema.index({ systemRoleId: 1, isActive: 1 });
+systemUserSchema.index(
+  { hrmsEmployeeId: 1 },
+  { unique: true, partialFilterExpression: { hrmsEmployeeId: { $type: 'string' } } }
+);
 
 export default mongoose.model('SystemUser', systemUserSchema);

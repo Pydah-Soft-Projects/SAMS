@@ -27,6 +27,7 @@ const systemSettingSchema = new mongoose.Schema(
     gateSettings: {
       eyeBlinkVerificationEnabled: { type: Boolean, default: true },
       labourPayCategoryGateEntryOptional: { type: Boolean, default: false },
+      hrmsEmployeeCreationEnabled: { type: Boolean, default: true },
       optionalGatePayCategories: {
         type: [String],
         default: ['contract', 'contractor', 'contractors', 'contracters', 'contracter'],

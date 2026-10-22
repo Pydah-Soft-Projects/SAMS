@@ -73,6 +73,8 @@ cp backend/.env.example backend/.env
 cp ai-server/.env.example ai-server/.env
 ```
 
+Set `MONGO_EMPLOYEE_URI` in `backend/.env` (and in the backend deployment environment) to enable HRMS employee search and live HRMS password verification for linked system users. Linked users sign in with their HRMS employee number and password; password changes must be made in HRMS. Keep this credential private; it is not needed for manual account creation.
+
 ### 4. Run all services
 
 ```bash

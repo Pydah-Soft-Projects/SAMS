@@ -9,6 +9,7 @@ import PermissionMatrix from '@/components/PermissionMatrix';
 import GateAccessPicker, { gateModeBadgeLabel } from '@/components/GateAccessPicker';
 import ScopeOverflowCell from '@/components/ScopeOverflowCell';
 import DepartmentPicker, { departmentDisplayLabel } from '@/components/DepartmentPicker';
+import HrmsEmployeePicker from '@/components/HrmsEmployeePicker';
 import {
   filterDepartmentsByDivisions,
   filterGatesByDivisions,
@@ -131,6 +132,8 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail]           = useState('');
   const [password, setPassword]     = useState('');
+  const [selectedHrmsEmployee, setSelectedHrmsEmployee] = useState(null);
+  const [hrmsEmployeeCreationEnabled, setHrmsEmployeeCreationEnabled] = useState(false);
   const [systemRoleId, setSystemRoleId] = useState('');
   const [isActive, setIsActive]     = useState(true);
   const [divisionIds, setDivisionIds]   = useState([]);
@@ -152,6 +155,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     if (!user) return;
     setEditing(false);
     setPassword('');
+    setSelectedHrmsEmployee(null);
     setError('');
     setSuccess('');
     setDisplayName(user.displayName || '');
@@ -173,12 +177,14 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
       api.divisions.list({ isActive: 'true' }),
       api.gates.list({ isActive: 'true' }),
       api.departments.list(),
+      api.gate.settings(),
     ])
-      .then(([r, d, g, dep]) => {
+      .then(([r, d, g, dep, gateSettings]) => {
         setRoles(r.filter((x) => x.isActive));
         setDivisions(d);
         setGates(g);
         setDepartments(dep);
+        setHrmsEmployeeCreationEnabled(gateSettings.hrmsEmployeeCreationEnabled ?? true);
       })
       .catch((e) => setError(e.message));
   }, [editing]);
@@ -220,6 +226,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     setError('');
     setSuccess('');
     setPassword('');
+    setSelectedHrmsEmployee(null);
     setDisplayName(user.displayName || '');
     setEmail(user.email || '');
     setSystemRoleId(user.systemRoleId?._id || '');
@@ -250,7 +257,11 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
         departmentIds,
         departmentAccessModes,
       };
-      if (password.trim()) payload.password = password.trim();
+      if (selectedHrmsEmployee) {
+        payload.hrmsEmployeeId = selectedHrmsEmployee._id;
+      } else if (password.trim()) {
+        payload.password = password.trim();
+      }
       await api.systemUsers.update(user._id, payload);
       if (canEditPrivileges && roleId) {
         await api.systemRoles.updatePermissions(roleId, applyWriteImpliesRead(rolePerms));
@@ -401,10 +412,27 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                       <label htmlFor="su-username">Username</label>
                       <input id="su-username" value={user.username} disabled />
                     </div>
-                    <div className="form-group">
-                      <label htmlFor="su-password">New Password</label>
-                      <input id="su-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep current" autoComplete="new-password" />
-                    </div>
+                    {!user.hrmsEmployeeId && hrmsEmployeeCreationEnabled && (
+                      <HrmsEmployeePicker
+                        selectedEmployee={selectedHrmsEmployee}
+                        onSelect={(employee) => {
+                          setSelectedHrmsEmployee(employee);
+                          setPassword('');
+                        }}
+                        onClear={() => setSelectedHrmsEmployee(null)}
+                        label="Assign to HRMS employee"
+                      />
+                    )}
+                    {user.hrmsEmployeeId ? (
+                      <p className="field-hint">This account uses HRMS credentials. Manage password changes in HRMS.</p>
+                    ) : selectedHrmsEmployee ? (
+                      <p className="field-hint">After saving, this account will use the selected employee&apos;s HRMS password.</p>
+                    ) : (
+                      <div className="form-group">
+                        <label htmlFor="su-password">New Password</label>
+                        <input id="su-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep current" autoComplete="new-password" />
+                      </div>
+                    )}
                     <div className="form-group">
                       <label htmlFor="su-role">System Role *</label>
                       <select id="su-role" value={systemRoleId} onChange={(e) => setSystemRoleId(e.target.value)} required>
