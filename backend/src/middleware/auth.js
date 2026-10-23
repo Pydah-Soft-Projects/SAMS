@@ -109,6 +109,7 @@ export function invalidateUserCache(userId) {
 const PUBLIC_API_ROUTES = [
   { method: 'POST', path: '/api/auth/login' },
   { method: 'POST', path: '/api/auth/precheck' },
+  { method: 'POST', path: '/api/auth/sso-login' },
   { method: 'GET',  path: '/api/health' },
   { method: 'GET',  path: '/api/ping' },
   { method: 'GET',  prefix: '/api/passes/verify/' },
@@ -143,6 +144,7 @@ export function signToken(user) {
   return jwt.sign(
     {
       sub: user._id.toString(),
+      userId: user._id.toString(),
       isSuperAdmin: Boolean(user.isSuperAdmin),
       username: user.username,
     },
@@ -172,7 +174,7 @@ export async function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired session' });
   }
 
-  const userId = payload.sub;
+  const userId = payload.sub || payload.userId;
 
   // ── Cache hit: skip DB round-trip entirely ─────────────────────────────
   const cached = cacheGet(userId);

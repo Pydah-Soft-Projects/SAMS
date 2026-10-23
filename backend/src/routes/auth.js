@@ -281,6 +281,159 @@ router.post(
   })
 );
 
+// ─── /sso-login ──────────────────────────────────────────────────────────────
+// Verifies encrypted token from CRM Gateway and establishes SAMS session
+router.post(
+  '/sso-login',
+  asyncHandler(async (req, res) => {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'SSO token is required',
+      });
+    }
+
+    // 1. Verify token with CRM Gateway
+    const CRM_AUTH_URL = process.env.CRM_AUTH_URL || 'https://crm.pydah.edu.in';
+    let crmResponse;
+    try {
+      const response = await fetch(`${CRM_AUTH_URL}/api/auth/verify-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ encryptedToken: token }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success || !data.data) {
+        console.error('[SAMS-SSO] CRM verify-token failed:', data?.message || response.statusText);
+        return res.status(401).json({
+          success: false,
+          message: data?.message || 'Invalid or expired SSO token',
+        });
+      }
+      crmResponse = data;
+    } catch (apiErr) {
+      console.error('[SAMS-SSO] CRM verify-token error:', apiErr.message);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired SSO token',
+      });
+    }
+
+    const crmData = crmResponse.data;
+    const {
+      userId,
+      username,
+      displayName,
+      name,
+      email,
+      hrmsEmployeeId,
+      employeeId,
+      empNo,
+      isSuperAdmin,
+    } = crmData;
+
+    const empId = hrmsEmployeeId || employeeId || empNo;
+
+    console.log(`[SAMS-SSO] Verified CRM user: ${displayName || name || username} (Emp: ${empId}, Email: ${email})`);
+
+    // 2. Locate SystemUser in SAMS database
+    const orConditions = [];
+    if (empId) {
+      orConditions.push({ hrmsEmployeeId: String(empId).trim() });
+    }
+    if (email && typeof email === 'string' && email.trim()) {
+      orConditions.push({ email: email.toLowerCase().trim() });
+    }
+    if (username && typeof username === 'string' && username.trim()) {
+      orConditions.push({ username: username.toLowerCase().trim() });
+    }
+    if (userId && /^[0-9a-fA-F]{24}$/.test(userId)) {
+      orConditions.push({ _id: userId });
+    }
+
+    let user = null;
+    if (orConditions.length > 0) {
+      user = await SystemUser.findOne({
+        $or: orConditions,
+        isActive: true,
+      })
+        .populate('systemRoleId', 'name slug permissions isActive')
+        .populate('divisionIds', 'name slug')
+        .populate('gateIds', 'name slug gateType divisionId')
+        .populate('departmentIds', 'name slug isActive');
+    }
+
+    // 3. Auto-provision if user does not exist yet (e.g. HRMS admin logging in for first time)
+    if (!user) {
+      console.log(`[SAMS-SSO] Auto-provisioning new SAMS SystemUser for: ${displayName || name || username || empId}`);
+      const baseUsername = (username || (email ? email.split('@')[0] : empId) || `user_${Date.now()}`)
+        .toLowerCase()
+        .trim();
+
+      let chosenUsername = baseUsername;
+      const existing = await SystemUser.findOne({ username: chosenUsername });
+      if (existing) {
+        chosenUsername = `${baseUsername}_${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
+      user = new SystemUser({
+        username: chosenUsername,
+        displayName: displayName || name || username || 'SAMS Operator',
+        email: email ? email.toLowerCase().trim() : '',
+        hrmsEmployeeId: empId ? String(empId).trim() : undefined,
+        passwordHash: 'SSO_MANAGED_AUTHENTICATION',
+        isSuperAdmin: Boolean(isSuperAdmin),
+        isActive: true,
+        lastLoginAt: new Date(),
+      });
+      await user.save();
+    } else {
+      if (isSuperAdmin !== undefined && Boolean(isSuperAdmin) !== user.isSuperAdmin) {
+        user.isSuperAdmin = Boolean(isSuperAdmin);
+      }
+      user.lastLoginAt = new Date();
+      await user.save();
+    }
+
+    if (!user.isSuperAdmin && user.systemRoleId && !user.systemRoleId.isActive) {
+      return res.status(403).json({
+        success: false,
+        error: 'Your assigned role is inactive. Contact an administrator.',
+        message: 'Your assigned role is inactive. Contact an administrator.',
+      });
+    }
+
+    if (shouldForceEmployeeAfterHoursLogout(user)) {
+      return res.status(403).json({
+        success: false,
+        error: AFTER_HOURS_LOGOUT_MESSAGE,
+        message: AFTER_HOURS_LOGOUT_MESSAGE,
+        code: AFTER_HOURS_LOGOUT_CODE,
+      });
+    }
+
+    // 4. Generate local SAMS JWT
+    const tokenPayload = signToken(user);
+
+    // 5. Return authenticated session
+    const serialized = serializeUser(user);
+    return res.status(200).json({
+      success: true,
+      message: 'SSO login successful',
+      token: tokenPayload,
+      user: {
+        ...serialized,
+        id: user._id.toString(),
+        isSSO: true,
+      },
+    });
+  })
+);
+
 router.post(
   '/verify-password',
   authenticate,

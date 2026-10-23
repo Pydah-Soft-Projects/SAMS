@@ -1,6 +1,7 @@
 import { AuthProvider } from '@/components/AuthProvider';
 import LayoutShell from '@/components/LayoutShell';
 import PwaShell from '@/components/PwaShell';
+import PortalSwitcher from '@/components/PortalSwitcher';
 import './globals.css';
 import '../styles/admin-dashboard.css';
 
@@ -47,6 +48,7 @@ export default function RootLayout({ children }) {
       </head>
       <body suppressHydrationWarning>
         <AuthProvider>
+          <PortalSwitcher />
           <PwaShell />
           <LayoutShell>{children}</LayoutShell>
         </AuthProvider>

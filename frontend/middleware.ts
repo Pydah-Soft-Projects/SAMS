@@ -14,6 +14,13 @@ export function middleware(request) {
     return NextResponse.next();
   }
 
+  const ssoToken = request.nextUrl.searchParams.get('token');
+  if (ssoToken && pathname !== '/login') {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('token', ssoToken);
+    return NextResponse.redirect(loginUrl);
+  }
+
   const token = request.cookies.get('smas_token')?.value;
   if (!token) {
     const loginUrl = new URL('/login', request.url);

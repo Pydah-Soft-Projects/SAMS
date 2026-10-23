@@ -266,6 +266,8 @@ export const api = {
   },
 
   auth: {
+    ssoLogin: (token) =>
+      request('/auth/sso-login', { method: 'POST', body: JSON.stringify({ token }) }),
     precheck: (username) =>
       request('/auth/precheck', { method: 'POST', body: JSON.stringify({ username }) }),
     login: (username, password, fingerprint = null) =>

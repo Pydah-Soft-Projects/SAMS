@@ -1,11 +1,12 @@
 const TOKEN_KEY = 'smas_token';
 const USER_KEY = 'smas_user';
+const SSO_FLAG_KEY = 'sams_is_sso';
 const TOKEN_MAX_AGE = 7 * 24 * 60 * 60;
 
 export function getToken() {
   if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    return localStorage.getItem(TOKEN_KEY) || localStorage.getItem('token') || localStorage.getItem('sams_token');
   } catch {
     return null;
   }
@@ -14,18 +15,60 @@ export function getToken() {
 export function getStoredUser() {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(USER_KEY);
+    const raw = localStorage.getItem(USER_KEY) || localStorage.getItem('user') || localStorage.getItem('sams_user');
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-export function setSession(token, user) {
+export function isSsoSession() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return (
+      sessionStorage.getItem(SSO_FLAG_KEY) === 'true' ||
+      localStorage.getItem(SSO_FLAG_KEY) === 'true' ||
+      localStorage.getItem('isSSO') === 'true'
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function setSsoFlag(isSso) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (isSso) {
+      sessionStorage.setItem(SSO_FLAG_KEY, 'true');
+      localStorage.setItem(SSO_FLAG_KEY, 'true');
+      localStorage.setItem('isSSO', 'true');
+    } else {
+      sessionStorage.removeItem(SSO_FLAG_KEY);
+      localStorage.removeItem(SSO_FLAG_KEY);
+      localStorage.removeItem('isSSO');
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function setSession(token, user, isSso = false) {
   if (typeof window !== 'undefined') {
+    const serializedUser = JSON.stringify(user);
     try {
       localStorage.setItem(TOKEN_KEY, token);
-      localStorage.setItem(USER_KEY, JSON.stringify(user));
+      localStorage.setItem(USER_KEY, serializedUser);
+      // Compatibility keys
+      localStorage.setItem('token', token);
+      localStorage.setItem('sams_token', token);
+      localStorage.setItem('user', serializedUser);
+      localStorage.setItem('sams_user', serializedUser);
+
+      if (isSso || user?.isSSO) {
+        setSsoFlag(true);
+      } else {
+        setSsoFlag(false);
+      }
     } catch {
       // ignore
     }
@@ -42,6 +85,12 @@ export function clearSession() {
     try {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
+      localStorage.removeItem('token');
+      localStorage.removeItem('sams_token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('sams_user');
+      setSsoFlag(false);
+      sessionStorage.clear();
     } catch {
       // ignore
     }

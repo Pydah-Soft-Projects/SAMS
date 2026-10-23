@@ -687,7 +687,7 @@ function LoginCard({ wide, submitting, loaderMessage, title, subtitle, step, flo
   );
 }
 
-function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationEnabled = false }) {
+function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationEnabled = false, ssoError = '' }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login, user, logout, loading: authLoading } = useAuth();
@@ -701,6 +701,7 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState(() => {
+    if (ssoError) return ssoError;
     const err = searchParams?.get('error');
     if (err === 'location_blocked') {
       return 'Your session was terminated because you left the authorized location area.';
@@ -711,6 +712,10 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
     return '';
   });
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (ssoError) setError(ssoError);
+  }, [ssoError]);
 
   useEffect(() => {
     warmBackend();
@@ -1049,9 +1054,68 @@ function DeviceGate({ geoLocationEnabled }) {
  *   default — the system was designed to work without device validation).
  */
 function LoginPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { ssoLogin } = useAuth();
+  const [ssoVerifying, setSsoVerifying] = useState(false);
+  const [ssoError, setSsoError] = useState('');
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(/** @type {boolean|null} */ (null));
   const [geoLocationEnabled, setGeoLocationEnabled] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // 1. Intercept incoming SSO Token from URL
+  useEffect(() => {
+    const ssoToken =
+      searchParams?.get('token') ||
+      (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('token') : null);
+
+    if (!ssoToken) return;
+
+    let active = true;
+
+    async function processSSOLogin(token) {
+      setSsoVerifying(true);
+      setSsoError('');
+
+      try {
+        // Preload switcher script for CDN transition and web component compatibility
+        if (typeof document !== 'undefined' && !document.getElementById('pydah-portal-switcher-cdn')) {
+          const s = document.createElement('script');
+          s.id = 'pydah-portal-switcher-cdn';
+          s.src = 'https://crm.pydah.edu.in/portal-switcher.js';
+          s.async = true;
+          document.body.appendChild(s);
+        }
+
+        const loggedInUser = await ssoLogin(token);
+        if (!active) return;
+
+        // Clean token from address bar
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          window.PydahSwitcher?.hideTransition?.();
+        }
+
+        const dest = getPostLoginRoute(loggedInUser);
+        router.replace(dest);
+      } catch (err) {
+        console.error('[SAMS-SSO] SSO login failed:', err);
+        if (!active) return;
+        setSsoError(err.message || 'SSO authentication failed. Please sign in with your credentials.');
+        if (typeof window !== 'undefined') {
+          window.PydahSwitcher?.hideTransition?.();
+        }
+      } finally {
+        if (active) setSsoVerifying(false);
+      }
+    }
+
+    processSSOLogin(ssoToken);
+
+    return () => {
+      active = false;
+    };
+  }, [searchParams, ssoLogin, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1086,6 +1150,25 @@ function LoginPageInner() {
     return () => { cancelled = true; };
   }, []);
 
+  // Show seamless branded loader during SSO verification
+  if (ssoVerifying) {
+    return (
+      <div className="login-shell" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <pydah-sso-loader portal="sams" title="Labour Management (SAMS)"></pydah-sso-loader>
+        <div className="device-gate-card" role="status" aria-live="polite" style={{ textAlign: 'center', margin: 'auto' }}>
+          <div className="device-gate-card__icon device-gate-card__icon--checking">
+            <ClockIcon />
+          </div>
+          <h2 className="device-gate-card__title">Authenticating via Single Sign-On</h2>
+          <p className="device-gate-card__subtitle">Verifying your session with Pydah CRM Gateway…</p>
+          <div className="device-gate-card__spinner" aria-hidden="true">
+            <span /><span /><span />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Show a brief loading state while fetching settings
   if (!settingsLoaded) {
     return (
@@ -1108,7 +1191,7 @@ function LoginPageInner() {
 
   // Device Maintenance Mode is OFF — skip the Device Agent entirely
   if (!maintenanceEnabled) {
-    return <LoginForm deviceFingerprint={null} geoLocationEnabled={geoLocationEnabled} />;
+    return <LoginForm deviceFingerprint={null} geoLocationEnabled={geoLocationEnabled} ssoError={ssoError} />;
   }
 
   // Device Maintenance Mode is ON — run the full DeviceGate workflow

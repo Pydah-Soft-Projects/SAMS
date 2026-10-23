@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/client';
-import { clearSession, getStoredUser, getToken, setSession, hasPermission } from '@/lib/auth/session';
+import { clearSession, getStoredUser, getToken, setSession, hasPermission, isSsoSession } from '@/lib/auth/session';
 import { clearGateFlowState } from '@/lib/gateSession';
 import { shouldAutoLogoutEmployee } from '@/lib/employeeAutoLogout';
 
@@ -28,7 +28,7 @@ export function AuthProvider({ children }) {
     try {
       const me = await api.auth.me();
       setUser(me);
-      setSession(token, me);
+      setSession(token, me, isSsoSession());
       return me;
     } catch {
       if (!options.silent) {
@@ -62,7 +62,18 @@ export function AuthProvider({ children }) {
     if (!options.keepGateSession) {
       clearGateFlowState();
     }
-    setSession(result.token, result.user);
+    setSession(result.token, result.user, false);
+    setUser(result.user);
+    return result.user;
+  }, []);
+
+  const ssoLogin = useCallback(async (token) => {
+    clearGateFlowState();
+    const result = await api.auth.ssoLogin(token);
+    if (!result || !result.token) {
+      throw new Error(result?.message || 'SSO authentication failed');
+    }
+    setSession(result.token, result.user, true);
     setUser(result.user);
     return result.user;
   }, []);
@@ -149,8 +160,8 @@ export function AuthProvider({ children }) {
   );
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, refreshUser, can }),
-    [user, loading, login, logout, refreshUser, can]
+    () => ({ user, loading, login, ssoLogin, logout, refreshUser, can, isSSO: isSsoSession() }),
+    [user, loading, login, ssoLogin, logout, refreshUser, can]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
