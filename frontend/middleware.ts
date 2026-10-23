@@ -14,10 +14,8 @@ export function middleware(request) {
     return NextResponse.next();
   }
 
-  const ssoToken = request.nextUrl.searchParams.get('token');
-  if (ssoToken && pathname !== '/login') {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('token', ssoToken);
+  if (request.nextUrl.searchParams.has('token') && pathname !== '/login') {
+    const loginUrl = new URL(`/login${request.nextUrl.search}`, request.url);
     return NextResponse.redirect(loginUrl);
   }
 

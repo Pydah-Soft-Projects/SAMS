@@ -288,7 +288,18 @@ router.post(
   asyncHandler(async (req, res) => {
     const { token } = req.body;
 
-    if (!token) {
+    let cleanToken = typeof token === 'string' ? token.trim() : '';
+    try {
+      if (cleanToken.includes('%')) {
+        cleanToken = decodeURIComponent(cleanToken);
+      }
+    } catch (_) {}
+    // Restore base64 '+' characters if converted to spaces during URL query decoding
+    if (cleanToken.includes(' ')) {
+      cleanToken = cleanToken.replace(/ /g, '+');
+    }
+
+    if (!cleanToken) {
       return res.status(400).json({
         success: false,
         message: 'SSO token is required',
@@ -297,18 +308,31 @@ router.post(
 
     // 1. Verify token with CRM Gateway
     const CRM_AUTH_URL = process.env.CRM_AUTH_URL || 'https://crm.pydah.edu.in';
+    console.log(
+      `[SAMS-SSO] Verifying token with CRM (${CRM_AUTH_URL}). Length: ${cleanToken.length}, preview: ${cleanToken.substring(0, 10)}...${cleanToken.substring(cleanToken.length - 8)}`
+    );
+
     let crmResponse;
     try {
       const response = await fetch(`${CRM_AUTH_URL}/api/auth/verify-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ encryptedToken: token }),
+        body: JSON.stringify({
+          encryptedToken: cleanToken,
+          token: cleanToken,
+          portalId: 'sams',
+        }),
         signal: AbortSignal.timeout(10000),
       });
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.success || !data.data) {
-        console.error('[SAMS-SSO] CRM verify-token failed:', data?.message || response.statusText);
+        console.error('[SAMS-SSO] CRM verify-token failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          message: data?.message,
+          data,
+        });
         return res.status(401).json({
           success: false,
           message: data?.message || 'Invalid or expired SSO token',

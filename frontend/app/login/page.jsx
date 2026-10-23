@@ -1065,9 +1065,23 @@ function LoginPageInner() {
 
   // 1. Intercept incoming SSO Token from URL
   useEffect(() => {
-    const ssoToken =
-      searchParams?.get('token') ||
-      (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('token') : null);
+    let ssoToken = null;
+    if (typeof window !== 'undefined' && window.location.search) {
+      const match = window.location.search.match(/[?&]token=([^&]+)/);
+      if (match) {
+        try {
+          ssoToken = decodeURIComponent(match[1]);
+        } catch (_) {
+          ssoToken = match[1];
+        }
+      }
+    }
+    if (!ssoToken && searchParams?.get('token')) {
+      ssoToken = searchParams.get('token');
+    }
+    if (ssoToken && ssoToken.includes(' ')) {
+      ssoToken = ssoToken.replace(/ /g, '+');
+    }
 
     if (!ssoToken) return;
 
